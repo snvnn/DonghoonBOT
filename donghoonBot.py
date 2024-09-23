@@ -140,10 +140,12 @@ bot = commands.Bot(
     description='Relatively simple music bot example',
     intents=intents,
 )
- 
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    await bot.change_presence(status=discord.Status.online) #온라인    
+    await bot.change_presence(activity=discord.Game(name="총선 말아먹기"))    
     print('------')
  
  
