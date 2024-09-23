@@ -9,6 +9,8 @@ from discord.ext import commands
 from dico_token import Token
 import os
 
+from collections import deque
+
 # FFmpeg 상대 경로 설정 (현재 소스 코드와 같은 디렉토리에 있는 ffmpeg.exe)
 FFMPEG_PATH = os.path.join(os.getcwd(), "ffmpeg.exe")
 
@@ -36,8 +38,9 @@ ffmpeg_options = {
 }
  
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
- 
- 
+queue = deque()
+nowPlaying = False
+
 # youtube 음악과 로컬 음악의 재생을 구별하기 위한 클래스 작성.
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
@@ -61,10 +64,62 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
  
  
-# 음악 재생 클래스. 커맨드 포함.
+
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.is_playing = False
+        self.queue = deque()  # 인스턴스 변수로 큐 관리
+
+    async def play_next(self, ctx):
+        if len(self.queue) > 0:  # self.queue로 변경
+            self.is_playing = True
+            next_url = self.queue.popleft()  # self.queue로 변경
+            try:
+                async with ctx.typing():
+                    player = await YTDLSource.from_url(next_url, loop=self.bot.loop, stream=True)
+                    ctx.voice_client.play(player, after=lambda e: self.after_play(ctx) if e is None else print(f'Player error: {e}'))
+                await ctx.send(f'Now playing: {player.title}')
+            except Exception as e:
+                await ctx.send(f"Error playing the song: {e}")
+                self.is_playing = False
+                await self.play_next(ctx)  # 다음 곡 재생 시도
+        else:
+            self.is_playing = False
+
+ 
+    def after_play(self, ctx):
+        coro = self.play_next(ctx)
+        fut = asyncio.run_coroutine_threadsafe(coro, self.bot.loop)
+        try:
+            fut.result()
+        except Exception as e:
+            print(f"Error playing next song: {e}")
+
+
+    @commands.command()
+    async def play(self, ctx, *, url):
+        """유튜브 URL을 큐에 추가하고, 음악이 재생 중이 아니면 재생을 시작"""
+        self.queue.append(url)  # self.queue로 변경
+        await ctx.send(f"Added to the queue. Position in queue: {len(self.queue)}")  # self.queue로 변경
+
+        if not self.is_playing:  # 현재 재생 중인 음악이 없으면
+            await self.play_next(ctx)  # 즉시 재생 시작
+
+    @commands.command()
+    async def stop(self, ctx):
+        """음성 채널에서 봇을 나가게 하고 대기열을 초기화"""
+        queue.clear()  # 대기열 비우기
+        if ctx.voice_client:
+            await ctx.voice_client.disconnect()
+        self.is_playing = False  # 음악 재생 상태 초기화
+
+    @commands.command()
+    async def skip(self, ctx):
+        """현재 재생 중인 음악을 스킵하고 대기열의 다음 곡을 재생"""
+        if ctx.voice_client.is_playing():
+            ctx.voice_client.stop()  # 현재 음악을 멈추면 after 콜백이 호출되어 다음 곡을 재생
+
  
     @commands.command()
     async def join(self, ctx):
@@ -77,15 +132,6 @@ class Music(commands.Cog):
  
         await channel.connect()
  
-   
-    @commands.command()
-    async def play(self, ctx, *, url):
-        """Streams from a url (same as yt, but doesn't predownload)"""
-        async with ctx.typing():
-            player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
-            ctx.voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
-        await ctx.send(f'Now playing: {player.title}')
- 
     @commands.command()
     async def volume(self, ctx, volume: int):
         """Changes the player's volume"""
@@ -95,13 +141,7 @@ class Music(commands.Cog):
  
         ctx.voice_client.source.volume = volume / 100
         await ctx.send(f"Changed volume to {volume}%")
- 
-    @commands.command()
-    async def stop(self, ctx):
-        """Stops and disconnects the bot from voice"""
- 
-        await ctx.voice_client.disconnect()
-        
+            
     @commands.command()
     async def pause(self, ctx):
         ''' 음악을 일시정지 할 수 있습니다. '''
