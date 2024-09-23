@@ -7,7 +7,11 @@ import yt_dlp as youtube_dl
  
 from discord.ext import commands
 from dico_token import Token
- 
+import os
+
+# FFmpeg 상대 경로 설정 (현재 소스 코드와 같은 디렉토리에 있는 ffmpeg.exe)
+FFMPEG_PATH = os.path.join(os.getcwd(), "ffmpeg.exe")
+
 # Suppress noise about console usage from errors
 youtube_dl.utils.bug_reports_message = lambda: ''
  
@@ -77,11 +81,9 @@ class Music(commands.Cog):
     @commands.command()
     async def play(self, ctx, *, url):
         """Streams from a url (same as yt, but doesn't predownload)"""
- 
         async with ctx.typing():
             player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
             ctx.voice_client.play(player, after=lambda e: print(f'Player error: {e}') if e else None)
- 
         await ctx.send(f'Now playing: {player.title}')
  
     @commands.command()
