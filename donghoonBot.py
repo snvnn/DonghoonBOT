@@ -79,7 +79,7 @@ class Music(commands.Cog):
                 async with ctx.typing():
                     player = await YTDLSource.from_url(next_url, loop=self.bot.loop, stream=True)
                     ctx.voice_client.play(player, after=lambda e: self.after_play(ctx) if e is None else print(f'Player error: {e}'))
-                await ctx.send(f'Now playing: {player.title}')
+                await ctx.send(f'Now playing: {player.title} \n {next_url}')
             except Exception as e:
                 await ctx.send(f"Error playing the song: {e}")
                 self.is_playing = False
@@ -100,11 +100,20 @@ class Music(commands.Cog):
     @commands.command()
     async def play(self, ctx, *, url):
         """유튜브 URL을 큐에 추가하고, 음악이 재생 중이 아니면 재생을 시작"""
-        self.queue.append(url)  # self.queue로 변경
-        await ctx.send(f"Added to the queue. Position in queue: {len(self.queue)}")  # self.queue로 변경
-
-        if not self.is_playing:  # 현재 재생 중인 음악이 없으면
-            await self.play_next(ctx)  # 즉시 재생 시작
+        
+        if self.is_playing:
+            self.queue.append(url)  # self.queue로 변경
+            await ctx.send(f"대기열에 음악을 추가합니다 현재 대기열: {len(self.queue)}")  # self.queue로 변경
+        else:  # 현재 재생 중인 음악이 없으면
+            try:
+                async with ctx.typing():
+                    player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
+                    ctx.voice_client.play(player, after=lambda e: self.after_play(ctx) if e is None else print(f'Player error: {e}'))
+                await ctx.send(f'Now playing: {player.title}')
+            except Exception as e:
+                await ctx.send(f"Error playing the song: {e}")
+                self.is_playing = False
+                await self.play_next(ctx)  # 다음 곡 재생 시도
 
     @commands.command()
     async def stop(self, ctx):
@@ -146,10 +155,12 @@ class Music(commands.Cog):
     async def pause(self, ctx):
         ''' 음악을 일시정지 할 수 있습니다. '''
  
-        if ctx.voice_client.is_paused() or not ctx.voice_client.is_playing():
-            await ctx.send("음악이 이미 일시 정지 중이거나 재생 중이지 않습니다.")
-            
-        ctx.voice_client.pause()
+        if ctx.voice_client.is_paused():
+            await ctx.send("음악이 일시 정지 상태입니다.")
+        elif ctx.voice_client.is_playing():
+            await ctx.send("음악이 재생 중이지 않습니다.")
+        else: 
+            ctx.voice_client.pause()
             
     @commands.command()
     async def resume(self, ctx):
